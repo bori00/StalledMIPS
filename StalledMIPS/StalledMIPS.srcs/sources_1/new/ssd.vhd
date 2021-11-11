@@ -62,16 +62,18 @@ begin
             when "01" => an <= "1101";
             when "10" => an <= "1011";
             when "11" => an <= "0111";
+            when others => an <= "1111";
         end case;
     end process;
     
-    MUX_CATHODE: process(counter_value) 
+    MUX_CATHODE: process(counter_value, digit0, digit1, digit2, digit3) 
     begin
     case counter_value(15 downto 14) is
             when "00" => digit_to_display <= digit0;
             when "01" => digit_to_display <= digit1;
             when "10" => digit_to_display <= digit2;
             when "11" => digit_to_display <= digit3;
+            when others => digit_to_display <= digit3;
         end case;
     end process;
     

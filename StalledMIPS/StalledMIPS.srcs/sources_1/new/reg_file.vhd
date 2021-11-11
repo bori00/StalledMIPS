@@ -61,7 +61,9 @@ begin
     begin
         if falling_edge(clk) then
             if RegWr='1' then
-                reg_file(conv_integer(WA)) <= WD;
+                if conv_integer(WA) /= 0 then
+                    reg_file(conv_integer(WA)) <= WD;
+                end if;
             end if;
         end if;
     end process;
