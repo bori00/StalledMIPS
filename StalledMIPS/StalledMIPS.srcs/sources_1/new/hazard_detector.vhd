@@ -35,12 +35,12 @@ use IEEE.STD_LOGIC_UNSIGNED.ALL;
 
 entity hazard_detector is
     Port ( IF_ID_opcode : in STD_LOGIC_VECTOR(2 downto 0);
-           IF_ID_rs : in STD_LOGIC;
-           IF_ID_rt : in STD_LOGIC;
+           IF_ID_rs : in STD_LOGIC_VECTOR(2 downto 0);
+           IF_ID_rt : in STD_LOGIC_VECTOR(2 downto 0);
            ID_EX_RegWrite : in STD_LOGIC;
-           ID_EX_RegDst : in STD_LOGIC;
+           ID_EX_RegDst : in STD_LOGIC_VECTOR(2 downto 0);
            EX_MEM_RegWrite : in STD_LOGIC;
-           EX_MEM_RegDst : in STD_LOGIC;
+           EX_MEM_RegDst : in STD_LOGIC_VECTOR(2 downto 0);
            hazard_detected : out STD_LOGIC);
 end hazard_detector;
 

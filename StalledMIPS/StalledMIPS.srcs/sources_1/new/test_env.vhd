@@ -97,7 +97,9 @@ component ID is
            ExtImm: out std_logic_vector(15 downto 0);
            Func: out std_logic_vector(2 downto 0);
            Sa: out std_logic;
-           DecodedWriteAddress: out std_logic_vector(2 downto 0));
+           DecodedWriteAddress: out std_logic_vector(2 downto 0);
+           ReadAddressRS: out std_logic_vector(2 downto 0);
+           ReadAddressRT: out std_logic_vector(2 downto 0));
 end component;
 
 component EX is
@@ -124,12 +126,12 @@ end component;
 
 component hazard_detector is
     Port ( IF_ID_opcode : in STD_LOGIC_VECTOR(2 downto 0);
-           IF_ID_rs : in STD_LOGIC;
-           IF_ID_rt : in STD_LOGIC;
+           IF_ID_rs : in STD_LOGIC_VECTOR(2 downto 0);
+           IF_ID_rt : in STD_LOGIC_VECTOR(2 downto 0);
            ID_EX_RegWrite : in STD_LOGIC;
-           ID_EX_RegDst : in STD_LOGIC;
+           ID_EX_RegDst : in STD_LOGIC_VECTOR(2 downto 0);
            EX_MEM_RegWrite : in STD_LOGIC;
-           EX_MEM_RegDst : in STD_LOGIC;
+           EX_MEM_RegDst : in STD_LOGIC_VECTOR(2 downto 0);
            hazard_detected : out STD_LOGIC);
 end component;
 
@@ -138,6 +140,7 @@ signal instr: std_logic_vector(15 downto 0);
 signal NextInstrAddress: std_logic_vector(15 downto 0);
 signal to_display: std_logic_vector(15 downto 0);
 signal WriteData, ReadData1, ReadData2, ExtImm, AluRes, MemData: std_logic_vector(15 downto 0);
+signal ReadAddressRS, ReadAddressRT: std_logic_vector(2 downto 0);
 signal RegDst, ExtOp, AluSrc, BranchEqual, BranchGreaterEqual, BranchGreater, Jump, MemWrite, MemToReg, RegWrite: std_logic;
 signal AluOp: std_logic_vector(2 downto 0);
 signal Func: std_logic_vector(2 downto 0);
@@ -146,6 +149,7 @@ signal BranchAddress, JumpAddress: std_logic_vector(15 downto 0);
 signal Zero: std_logic;
 signal PCSrc: std_logic;
 signal DecodedWriteAddress: std_logic_vector(2 downto 0);
+signal RAW_hazard_detected: std_logic;
 
 
 -- Pipeline register IF -> ID
@@ -205,7 +209,9 @@ ID_Comp: ID port map(
                ExtImm => ExtImm, 
                Func => Func,
                Sa => Sa,
-               DecodedWriteAddress => DecodedWriteAddress
+               DecodedWriteAddress => DecodedWriteAddress,
+               ReadAddressRS => ReadAddressRS,
+               ReadADdressRT => ReadAddressRT
             );
             
 CU_Comp: CU port map(
@@ -291,6 +297,16 @@ begin
         MU_WB_MemToReg <= EX_MU_MemToReg;
     end if;
 end process;    
+
+HazardDetector: hazard_detector port map(
+           IF_ID_opcode => IF_ID_instr(15 downto 13),
+           IF_ID_rs => ReadAddressRS,
+           IF_ID_rt => ReadAddressRT,
+           ID_EX_RegWrite => ID_EX_RegWrite,
+           ID_EX_RegDst => ID_EX_RegFileWriteAddress,
+           EX_MEM_RegWrite => EX_MU_RegWrite,
+           EX_MEM_RegDst => EX_MU_RegFileWriteAddress,
+           hazard_detected => RAW_hazard_detected);
               
 MonoPulseGenerator: generic_mpg
         generic map(N => 5)

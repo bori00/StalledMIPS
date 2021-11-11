@@ -44,7 +44,9 @@ entity ID is
            ExtImm: out std_logic_vector(15 downto 0);
            Func: out std_logic_vector(2 downto 0);
            Sa: out std_logic;
-           DecodedWriteAddress: out std_logic_vector(2 downto 0));
+           DecodedWriteAddress: out std_logic_vector(2 downto 0);
+           ReadAddressRS: out std_logic_vector(2 downto 0);
+           ReadAddressRT: out std_logic_vector(2 downto 0));
 end ID;
 
 architecture Behavioral of ID is
@@ -77,6 +79,9 @@ REG_FILE_MEM: registerfile port map ( clk => clk,
            
 ReadAddress1 <= Instr(12 downto 10);
 ReadAddress2 <= Instr(9 downto 7);
+
+ReadAddressRS <= ReadAddress1;
+ReadAddressRT <= ReadADdress2;
 
 DecodedWriteAddress <= Instr(6 downto 4) when RegDst = '1' else Instr(9 downto 7);
 
