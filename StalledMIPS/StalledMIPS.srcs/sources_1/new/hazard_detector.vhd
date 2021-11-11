@@ -21,6 +21,8 @@
 
 library IEEE;
 use IEEE.STD_LOGIC_1164.ALL;
+use IEEE.STD_LOGIC_ARITH.ALL;
+use IEEE.STD_LOGIC_UNSIGNED.ALL;
 
 -- Uncomment the following library declaration if using
 -- arithmetic functions with Signed or Unsigned values
@@ -32,7 +34,7 @@ use IEEE.STD_LOGIC_1164.ALL;
 --use UNISIM.VComponents.all;
 
 entity hazard_detector is
-    Port ( IF_ID_opcode : in STD_LOGIC;
+    Port ( IF_ID_opcode : in STD_LOGIC_VECTOR(2 downto 0);
            IF_ID_rs : in STD_LOGIC;
            IF_ID_rt : in STD_LOGIC;
            ID_EX_RegWrite : in STD_LOGIC;
@@ -46,6 +48,10 @@ architecture Behavioral of hazard_detector is
 
 begin
 
-hazard_detected <= IF_ID_opcode != "111" && ID_EX_RegWrite = '1' && ID_EX_RegDst = IF_ID_rs;
+hazard_detected <= '1' when (IF_ID_opcode /= "111" and ID_EX_RegWrite = '1' and ID_EX_RegDst = IF_ID_rs) or
+                            (IF_ID_opcode /= "111" and EX_MEM_RegWrite = '1' and EX_MEM_RegDst = IF_ID_rs) or
+                            (IF_ID_opcode /= "000" and IF_ID_opcode /= "011" and ID_EX_RegWrite = '1' and ID_EX_RegDst = IF_ID_rt) or
+                            (IF_ID_opcode /= "000" and IF_ID_opcode /= "011" and EX_MEM_RegWrite = '1' and ID_EX_RegDst = IF_ID_rt) 
+                       else '0';
 
 end Behavioral;

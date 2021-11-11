@@ -122,6 +122,17 @@ component MU is
            MemData: out std_logic_vector(15 downto 0));
 end component;
 
+component hazard_detector is
+    Port ( IF_ID_opcode : in STD_LOGIC_VECTOR(2 downto 0);
+           IF_ID_rs : in STD_LOGIC;
+           IF_ID_rt : in STD_LOGIC;
+           ID_EX_RegWrite : in STD_LOGIC;
+           ID_EX_RegDst : in STD_LOGIC;
+           EX_MEM_RegWrite : in STD_LOGIC;
+           EX_MEM_RegDst : in STD_LOGIC;
+           hazard_detected : out STD_LOGIC);
+end component;
+
 signal mono_btns: std_logic_vector(4 downto 0);
 signal instr: std_logic_vector(15 downto 0);
 signal NextInstrAddress: std_logic_vector(15 downto 0);
