@@ -149,7 +149,7 @@ signal Func: std_logic_vector(2 downto 0);
 signal Sa: std_logic;
 signal BranchAddress, JumpAddress: std_logic_vector(15 downto 0);
 signal Zero: std_logic;
-signal PCSrc: std_logic;
+signal Branch: std_logic;
 signal DecodedWriteAddress: std_logic_vector(2 downto 0);
 signal RAW_hazard_detected: std_logic;
 
@@ -189,7 +189,7 @@ IF_Comp: IFC port map(
                BranchAddress => EX_MU_BranchAddress,
                JumpAddress => JumpAddress,
                Jump => Jump,
-               PCSrc => PCSrc,
+               PCSrc => Branch,
                Instr => Instr,
                NextInstrAddress => NextInstrAddress
             );
@@ -197,8 +197,13 @@ IF_Comp: IFC port map(
 IF_ID_Reg: process(internal_clk)
 begin
     if internal_clk'event and internal_clk = '1' then
-        IF_ID_Instr  <= Instr;
-        IF_ID_NextInstrAddress <= NextInstrAddress;
+        if Branch = '1' or Jump = '1' then
+            IF_ID_Instr <= x"0000"; -- Flush --> NOP
+            IF_ID_NextInstrAddress <= NextInstrAddress;
+        else
+            IF_ID_Instr  <= Instr;
+            IF_ID_NextInstrAddress <= NextInstrAddress;
+        end if;
     end if;
 end process;        
             
@@ -238,12 +243,23 @@ CU_Comp: CU port map(
 ID_EX_Reg: process(internal_clk)
 begin
     if internal_clk'event and internal_clk = '1' then
+        if Branch='1' then 
+            -- Flush --> NOP
+            ID_EX_RegWrite <= '0';
+            ID_EX_MemWrite <= '0';
+            ID_EX_BranchEqual <= '0';
+            ID_EX_BranchGreater <= '0';
+            ID_EX_BranchGreaterEqual <= '0';
+            ID_EX_RegFileWriteAddress <= "000";
+        else
+            ID_EX_RegWrite <= RegWrite;
+            ID_EX_MemWrite <= MemWrite;
+            ID_EX_BranchEqual <= BranchEqual;
+            ID_EX_BranchGreater <= BranchGreater;
+            ID_EX_BranchGreaterEqual <= BranchGreaterEqual;
+            ID_EX_RegFileWriteAddress <= DecodedWriteAddress;
+        end if;
         ID_EX_MemToReg <= MemToReg;
-        ID_EX_RegWrite <= RegWrite;
-        ID_EX_MemWrite <= MemWrite;
-        ID_EX_BranchEqual <= BranchEqual;
-        ID_EX_BranchGreater <= BranchGreater;
-        ID_EX_BranchGreaterEqual <= BranchGreaterEqual;
         ID_Ex_AluSrc <= AluSrc;
         ID_EX_AluOp <= AluOp;
         ID_EX_ReadData1 <= ReadData1;
@@ -252,7 +268,6 @@ begin
         ID_EX_ExtImm <= ExtImm;
         ID_EX_Func <= Func;
         ID_EX_Sa <= Sa;
-        ID_EX_RegFileWriteAddress <= DecodedWriteAddress;
     end if;
 end process;   
             
@@ -269,16 +284,21 @@ EX_Comp: EX port map(
                Zero => Zero,
                ALURes => AluRes);
 
-IX_MU_Reg: process(internal_clk)
+EX_MU_Reg: process(internal_clk)
 begin
     if internal_clk'event and internal_clk = '1' then
+        if Branch='1' then
+            EX_MU_RegWrite <= '0';
+            EX_MU_MemWrite <= '0';
+        else
+            EX_MU_RegWrite <= ID_EX_RegWrite;
+            EX_MU_MemWrite <= ID_EX_MemWrite;
+        end if;
         EX_MU_AluRes <= AluRes;
         EX_MU_ReadData2 <= ID_EX_ReadData2;
         EX_MU_Zero <= Zero;
         EX_MU_BranchAddress <= BranchAddress;
         EX_MU_MemToReg <= ID_EX_MemToReg;
-        EX_MU_RegWrite <= ID_EX_RegWrite;
-        EX_MU_MemWrite <= ID_EX_MemWrite;
         EX_MU_BranchEqual <= ID_EX_BranchEqual;
         EX_MU_BranchGreater <= ID_EX_BranchGreater;
         EX_MU_BranchGreaterEqual <= ID_EX_BranchGreaterEqual;
@@ -327,11 +347,11 @@ MonoPulseGenerator: generic_mpg
  JumpAddress <= IF_ID_NextInstrAddress(15 downto 13) & IF_ID_Instr(12 downto 0);
  Branch_Ctrl: process(EX_MU_BranchEqual, EX_MU_BranchGreaterEqual, EX_MU_BranchGreater, EX_MU_Zero, EX_MU_AluRes) 
  begin
-    PCSrc <= '0';
+    Branch <= '0';
     if (EX_MU_BranchEqual = '1' or EX_MU_BranchGreaterEqual = '1') and EX_MU_Zero = '1' then
-        PCSrc <= '1';
+        Branch <= '1';
     elsif (EX_MU_BranchGreater = '1' or EX_MU_BranchGreaterEqual = '1') and EX_MU_AluRes(15) = '0' then
-        PCSrc <= '1';
+        Branch <= '1';
     end if;
  end process;    
  
@@ -358,7 +378,7 @@ MonoPulseGenerator: generic_mpg
  end process;
  
  led(0) <= Jump;
- led(1) <= PCSrc;
+ led(1) <= Branch;
  led(2) <= RegDst;
  led(3) <= ExtOp;
  led(4) <= ALUSrc;
