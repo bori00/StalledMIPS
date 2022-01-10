@@ -39,6 +39,7 @@ entity IFC is
            JumpAddress : in STD_LOGIC_VECTOR (15 downto 0);
            Jump : in STD_LOGIC;
            PCSrc : in STD_LOGIC;
+           Stall: in STD_LOGIC;
            Instr : out STD_LOGIC_VECTOR (15 downto 0);
            NextInstrAddress: out STD_LOGIC_VECTOR (15 downto 0));
 end IFC;
@@ -49,40 +50,32 @@ architecture Behavioral of IFC is
 -- functionality; adds up the numbers from 1 to M[0] - 1 and stores the result in M[1] and RF[4]
 type rom_type is array(0 to 255) of std_logic_vector(15 downto 0); --todo
 signal rom_data: rom_type := (
--- VERSION with hazards (*s mark RAW hazards)
-    "0010000100000001", --0: $2 <= $0 + 1                   | 0x2101 
-    "0100000010000000", --1: $1 <= M[$0 + 0]                | 0x4080 
-    "0000000000110000", --2: $3 <= $0 + $0                  | 0x0030
-    "1000100010000011", --3: beq if $2 == $1 jump forward 3 | 0x8883 * (first time: RF[1], next times RF[2])
-    "0000110100110000", --4: $3 <= $3 + $2                  | 0x0D30 * (first time only, for RF[3])
-    "0010100100000001", --5: $2 <= $2 + 1                   | 0x2901
-    "1110000000000011", --6: jump 3                         | 0xE003
-    "0110000110000001", --7: m[$0 + 1] <= $3                | 0x6181 *
-    "0100001000000001", --8: $4 <= m[$0 + 1] --> for check  | 0x4201 
-    "0001000001000001", --9: $4 <= $4 - $0 --> for check    | 0x1041 *
-    "0000000000000000", --10: NOP                           | 0x0000
-    others => x"0000"
-
--- HAZARDLESS VERSION
+-- Tester code 1: compute the sum 1 + 2 + 3 + ... + (M[0]-1) and store it in RF[4} and M[1]
 --    "0010000100000001", --0: $2 <= $0 + 1                   | 0x2101
---    "0100000010000000", --1: $1 <= M[$0 + 0]                | 0x4080
+--    "0100000010000000", --1: $1 <= M[$0 + 0]                | 0x4080 
 --    "0000000000110000", --2: $3 <= $0 + $0                  | 0x0030
---    "0000000000000000", --3: NOP                            | 0x0000
---    "1000100010000111", --4: beq if $2 == $1 jump forward 7 | 0x8887
---    "0000000000000000", --5: NOP                            | 0x0000 
---    "0000000000000000", --6: NOP                            | 0x0000 
---    "0000000000000000", --7: NOP                            | 0x0000 
---    "0000110100110000", --8: $3 <= $3 + $2                  | 0x0D30
---    "0010100100000001", --9: $2 <= $2 + 1                   | 0x2901
---    "1110000000000100", --10: jump 4                        | 0xE004
---    "0000000000000000", --11: NOP                           | 0x0000
---    "0110000110000001", --12: m[$0 + 1] <= $3               | 0x6181
---    "0100001000000001", --13: $4 <= m[$0 + 1] --> for check | 0x4201
---    "0000000000000000", --14: NOP                           | 0x0000
---    "0000000000000000", --15: NOP                           | 0x0000 
---    "0001000001000001", --16: sub $4 <= $4 - $0 --> for check |0x1041
---    "0000000000000000", --17: NOP                           | 0x0000
+--    "1000100010000011", --3: beq if $2 == $1 jump forward 3 | 0x8883 *RAW($1) the first time --> Stall 1x, (Note: RAW($2) in the next iterations, because instruction 7 is in the pipeline and then flushed)
+--    "0000110100110000", --4: $3 <= $3 + $2                  | 0x0D30 
+--    "0010100100000001", --5: $2 <= $2 + 1                   | 0x2901 
+--    "1110000000000011", --6: jump 3                         | 0xE003
+--    "0110000110000001", --7: M[$0 + 1] <= $3                | 0x6181
+--    "0100001000000001", --8: $4 <= M[$0 + 1] --> for check  | 0x4201 
+--    "0001000001000001", --9: $4 <= $4 - $0 --> for check    | 0x1041 *RAW($4). --> STALL 2x
+--    "0000000000000000", --10: NOP                           | 0x0000
 --    others => x"0000"
+    
+-- Tester code 2: considering an array in the RAM starting from M[1] and having M[0] elements, count the elements which have a value < 10, and store the result in $3.
+    "0010000110000000", --2: $3 <= $0 + 0  ($3 = the result)                    | 0x2180
+    "0010111010001010", --3: $5 <= $3 + 10 ($5 = the threshold)                 | 0x2E8A *RAW($3): Stall 2x
+    "0010110100000001", --0: $2 <= $3 + 1  ($2 = the memory address)            | 0x2D01 (No RAW($3) due to previous stalls)
+    "0100000010000000", --1: $1 <= M[$0 + 0]  ($1 = the array's cardinality)    | 0x4080 
+    "1100100010000101", --4: bg $2 > $1 jump forward 5                          | 0xC885 *The first time: RAW($2 and $1): Stall 2x
+    "0100101000000000", --5: $4 <= M[$2+0]                                      | 0x4A00 (No RAW($1) the first time because of the previous stall)
+    "1011001010000001", --6: bg2 $4 >= $5 jump forward 1                        | 0xB281 *RAW($4): Stall 2x
+    "0010110110000001", --7: $3 <= $3 + 1                                       | 0x2D81
+    "0010100100000001", --8: $2 <= $2 + 1                                       | 0x2901
+    "1110000000000100", --9: jump 4                                             | 0xE004
+    others => x"0000"
 );
 
 signal Instr_with_branch_addr, Instr_with_jump_addr, inner_NextInstrAddress: std_logic_vector(15 downto 0);
@@ -95,7 +88,9 @@ Instr <= rom_data(conv_integer(Instr_address(7 downto 0))); --todo
 PC: process(clk) 
 begin
     if clk'event and clk = '1' then
-        Instr_address <= Instr_with_jump_addr;
+        if Stall='0' or PCsrc='1' then
+            Instr_address <= Instr_with_branch_addr;
+        end if;
     end if;
 end process;
 
@@ -104,21 +99,22 @@ begin
     inner_NextInstrAddress <= Instr_address + 1;
 end process;
 
-BRANCH_MUX: process(PCSrc, BranchAddress, inner_NextInstrAddress) 
+-- branching has higher priority than jump, because it happened earlier!
+BRANCH_MUX: process(PCSrc, BranchAddress, Instr_with_jump_addr) 
 begin
     if PCSrc = '1' then
         Instr_with_branch_addr <= BranchAddress;
     else
-        Instr_with_branch_addr <= inner_NextInstrAddress;
+        Instr_with_branch_addr <= Instr_with_jump_addr;
     end if;
 end process;
 
-JUMP_MUX: process(Jump, JumpAddress, Instr_with_branch_addr) 
+JUMP_MUX: process(Jump, JumpAddress, inner_NextInstrAddress) 
 begin
     if Jump = '1' then
         Instr_with_jump_addr <= JumpAddress;
     else
-        Instr_with_jump_addr <= Instr_with_branch_addr;
+        Instr_with_jump_addr <= inner_NextInstrAddress;
     end if;
 end process;
 

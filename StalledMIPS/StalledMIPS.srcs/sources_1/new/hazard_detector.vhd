@@ -69,8 +69,8 @@ NOP_detector_comp: NOP_detector port map (
 hazard_detected <= '1' when IF_ID_is_NOP = '0' and
                             ((IF_ID_OpCode /= "111" and ID_EX_RegWrite = '1' and ID_EX_RegDst = IF_ID_rs and IF_ID_rs /= "000") or
                              (IF_ID_OpCode /= "111" and EX_MEM_RegWrite = '1' and EX_MEM_RegDst = IF_ID_rs and IF_ID_rs /= "000") or
-                             (IF_ID_OpCode /= "000" and IF_ID_OpCode /= "011" and ID_EX_RegWrite = '1' and ID_EX_RegDst = IF_ID_rt and IF_ID_rt /= "000") or
-                             (IF_ID_OpCode /= "000" and IF_ID_OpCode /= "011" and EX_MEM_RegWrite = '1' and EX_MEM_RegDst = IF_ID_rt and IF_ID_rt /= "000"))
+                             ((IF_ID_OpCode = "000" or (IF_ID_OpCode >= "011" and IF_ID_opcode <= "110")) and ID_EX_RegWrite = '1' and ID_EX_RegDst = IF_ID_rt and IF_ID_rt /= "000") or
+                             ((IF_ID_OpCode = "000" or (IF_ID_OpCode >= "011" and IF_ID_opcode <= "110")) and EX_MEM_RegWrite = '1' and EX_MEM_RegDst = IF_ID_rt and IF_ID_rt /= "000"))
                        else '0';
 
 end Behavioral;

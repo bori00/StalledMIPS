@@ -55,6 +55,7 @@ Component IFC is
            JumpAddress : in STD_LOGIC_VECTOR (15 downto 0);
            Jump : in STD_LOGIC;
            PCSrc : in STD_LOGIC;
+           Stall: in STD_LOGIC;
            Instr : out STD_LOGIC_VECTOR (15 downto 0);
            NextInstrAddress: out STD_LOGIC_VECTOR (15 downto 0));
 end component;
@@ -151,7 +152,7 @@ signal BranchAddress, JumpAddress: std_logic_vector(15 downto 0);
 signal Zero: std_logic;
 signal Branch: std_logic;
 signal DecodedWriteAddress: std_logic_vector(2 downto 0);
-signal RAW_hazard_detected: std_logic;
+signal RAW_Hazard_Detected: std_logic;
 
 
 -- Pipeline register IF -> ID
@@ -168,7 +169,7 @@ signal ID_EX_Func: std_logic_vector(2 downto 0);
 signal ID_EX_RegFileWriteAddress: std_logic_vector(2 downto 0);
 
 -- Pipeline register EX -> MU
-signal EX_MU_AluRes, EX_MU_BranchAddress, EX_MU_ReadData2: std_logic_vector(15 downto 0);
+signal EX_MU_AluRes, EX_MU_BranchAddress, EX_MU_ReadData2: std_logic_vector(15 downto 0) := x"0000";
 signal EX_MU_Zero: std_logic;
 signal EX_MU_MemToReg, EX_MU_RegWrite, EX_MU_MemWrite, EX_MU_BranchEqual, EX_MU_BranchGreater, EX_MU_BranchGreaterEqual: std_logic;
 signal EX_MU_RegFileWriteAddress: std_logic_vector(2 downto 0);
@@ -190,6 +191,7 @@ IF_Comp: IFC port map(
                JumpAddress => JumpAddress,
                Jump => Jump,
                PCSrc => Branch,
+               Stall => RAW_Hazard_Detected,
                Instr => Instr,
                NextInstrAddress => NextInstrAddress
             );
@@ -200,9 +202,10 @@ begin
         if Branch = '1' or Jump = '1' then
             IF_ID_Instr <= x"0000"; -- Flush --> NOP
             IF_ID_NextInstrAddress <= NextInstrAddress;
-        else
+        elsif RAW_Hazard_Detected='0' then
             IF_ID_Instr  <= Instr;
             IF_ID_NextInstrAddress <= NextInstrAddress;
+        -- else: stall
         end if;
     end if;
 end process;        
@@ -243,7 +246,7 @@ CU_Comp: CU port map(
 ID_EX_Reg: process(internal_clk)
 begin
     if internal_clk'event and internal_clk = '1' then
-        if Branch='1' then 
+        if Branch='1' or RAW_Hazard_Detected='1' then 
             -- Flush --> NOP
             ID_EX_RegWrite <= '0';
             ID_EX_MemWrite <= '0';
@@ -350,7 +353,9 @@ MonoPulseGenerator: generic_mpg
     Branch <= '0';
     if (EX_MU_BranchEqual = '1' or EX_MU_BranchGreaterEqual = '1') and EX_MU_Zero = '1' then
         Branch <= '1';
-    elsif (EX_MU_BranchGreater = '1' or EX_MU_BranchGreaterEqual = '1') and EX_MU_AluRes(15) = '0' then
+    elsif EX_MU_BranchGreaterEqual = '1' and EX_MU_AluRes(15) = '0' then
+        Branch <= '1';
+    elsif EX_MU_BranchGreater = '1' and EX_MU_AluRes(15) = '0' and EX_MU_Zero /= '1' then
         Branch <= '1';
     end if;
  end process;    
