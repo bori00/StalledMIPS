@@ -57,9 +57,9 @@ counter: process(clk) --16 bit counter
     DFF1: process(clk)
     begin
         if rising_edge(clk) then
-            if counter_value = x"FFFF" then
+           if counter_value = x"FFFF" then
                 q1 <= btn;
-            end if;
+           end if;
         end if;
     end process;
     

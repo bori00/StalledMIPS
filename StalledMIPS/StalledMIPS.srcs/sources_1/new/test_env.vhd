@@ -31,16 +31,16 @@ use IEEE.STD_LOGIC_1164.ALL;
 --library UNISIM;
 --use UNISIM.VComponents.all;
 
-entity test_env is
+entity stalled_mips is
     Port ( clk : in STD_LOGIC;
            btn : in STD_LOGIC_VECTOR (4 downto 0);
            sw : in STD_LOGIC_VECTOR (15 downto 0);
            led : out STD_LOGIC_VECTOR (15 downto 0);
            an : out STD_LOGIC_VECTOR (3 downto 0);
            cat : out STD_LOGIC_VECTOR (6 downto 0));
-end test_env;
+end stalled_mips;
 
-architecture Behavioral of test_env is
+architecture Behavioral of stalled_mips is
 
 Component generic_mpg is
     Generic (N: integer);
@@ -55,6 +55,7 @@ Component IFC is
            JumpAddress : in STD_LOGIC_VECTOR (15 downto 0);
            Jump : in STD_LOGIC;
            PCSrc : in STD_LOGIC;
+           Stall: in STD_LOGIC;
            Instr : out STD_LOGIC_VECTOR (15 downto 0);
            NextInstrAddress: out STD_LOGIC_VECTOR (15 downto 0));
 end component;
@@ -97,7 +98,9 @@ component ID is
            ExtImm: out std_logic_vector(15 downto 0);
            Func: out std_logic_vector(2 downto 0);
            Sa: out std_logic;
-           DecodedWriteAddress: out std_logic_vector(2 downto 0));
+           DecodedWriteAddress: out std_logic_vector(2 downto 0);
+           ReadAddressRS: out std_logic_vector(2 downto 0);
+           ReadAddressRT: out std_logic_vector(2 downto 0));
 end component;
 
 component EX is
@@ -122,19 +125,34 @@ component MU is
            MemData: out std_logic_vector(15 downto 0));
 end component;
 
+component hazard_detector is
+    Port ( IF_ID_opcode : in STD_LOGIC_VECTOR(2 downto 0);
+           IF_ID_rs : in STD_LOGIC_VECTOR(2 downto 0);
+           IF_ID_rt : in STD_LOGIC_VECTOR(2 downto 0);
+           IF_ID_RegDst: in STD_LOGIC_VECTOR(2 downto 0);
+           IF_ID_imm: in STD_LOGIC_VECTOR(15 downto 0);
+           ID_EX_RegWrite : in STD_LOGIC;
+           ID_EX_RegDst : in STD_LOGIC_VECTOR(2 downto 0);
+           EX_MEM_RegWrite : in STD_LOGIC;
+           EX_MEM_RegDst : in STD_LOGIC_VECTOR(2 downto 0);
+           hazard_detected : out STD_LOGIC);
+end component;
+
 signal mono_btns: std_logic_vector(4 downto 0);
 signal instr: std_logic_vector(15 downto 0);
 signal NextInstrAddress: std_logic_vector(15 downto 0);
 signal to_display: std_logic_vector(15 downto 0);
 signal WriteData, ReadData1, ReadData2, ExtImm, AluRes, MemData: std_logic_vector(15 downto 0);
-signal RegDst, ExtOp, AluSrc, BranchEqual, BranchGreaterEqual, BranchGreater, Jump, MemWrite, MemToReg, RegWrite: std_logic;
+signal ReadAddressRS, ReadAddressRT: std_logic_vector(2 downto 0);
+signal RegDst, ExtOp, AluSrc, BranchEqual, BranchGreaterEqual, BranchGreater, Jump, MemWrite, MemToReg, RegWrite: std_logic := '0';
 signal AluOp: std_logic_vector(2 downto 0);
 signal Func: std_logic_vector(2 downto 0);
 signal Sa: std_logic;
 signal BranchAddress, JumpAddress: std_logic_vector(15 downto 0);
 signal Zero: std_logic;
-signal PCSrc: std_logic;
+signal Branch: std_logic;
 signal DecodedWriteAddress: std_logic_vector(2 downto 0);
+signal RAW_Hazard_Detected: std_logic;
 
 
 -- Pipeline register IF -> ID
@@ -151,7 +169,7 @@ signal ID_EX_Func: std_logic_vector(2 downto 0);
 signal ID_EX_RegFileWriteAddress: std_logic_vector(2 downto 0);
 
 -- Pipeline register EX -> MU
-signal EX_MU_AluRes, EX_MU_BranchAddress, EX_MU_ReadData2: std_logic_vector(15 downto 0);
+signal EX_MU_AluRes, EX_MU_BranchAddress, EX_MU_ReadData2: std_logic_vector(15 downto 0) := x"0000";
 signal EX_MU_Zero: std_logic;
 signal EX_MU_MemToReg, EX_MU_RegWrite, EX_MU_MemWrite, EX_MU_BranchEqual, EX_MU_BranchGreater, EX_MU_BranchGreaterEqual: std_logic;
 signal EX_MU_RegFileWriteAddress: std_logic_vector(2 downto 0);
@@ -161,28 +179,39 @@ signal MU_WB_RegWrite, MU_WB_MemToReg: std_logic;
 signal MU_WB_RegFileWriteAddress: std_logic_vector(2 downto 0);
 signal MU_WB_MemData, MU_WB_AluRes: std_logic_vector(15 downto 0);
 
+signal internal_clk: std_logic;
+
 begin
 
+internal_clk <= clk;
+
 IF_Comp: IFC port map(
-                clk => mono_btns(0),
+                clk => internal_clk,
                BranchAddress => EX_MU_BranchAddress,
                JumpAddress => JumpAddress,
                Jump => Jump,
-               PCSrc => PCSrc,
+               PCSrc => Branch,
+               Stall => RAW_Hazard_Detected,
                Instr => Instr,
                NextInstrAddress => NextInstrAddress
             );
             
-IF_ID_Reg: process(mono_btns(0))
+IF_ID_Reg: process(internal_clk)
 begin
-    if mono_btns(0)'event and mono_btns(0) = '1' then
-        IF_ID_Instr  <= instr;
-        IF_ID_NextInstrAddress <= NextInstrAddress;
+    if internal_clk'event and internal_clk = '1' then
+        if Branch = '1' or Jump = '1' then
+            IF_ID_Instr <= x"0000"; -- Flush --> NOP
+            IF_ID_NextInstrAddress <= NextInstrAddress;
+        elsif RAW_Hazard_Detected='0' then
+            IF_ID_Instr  <= Instr;
+            IF_ID_NextInstrAddress <= NextInstrAddress;
+        -- else: stall
+        end if;
     end if;
 end process;        
             
 ID_Comp: ID port map(
-               clk => mono_btns(0),
+               clk => internal_clk,
                RegWrite  => MU_WB_RegWrite,
                Instr => IF_ID_Instr,
                RegDst => RegDst,
@@ -194,7 +223,9 @@ ID_Comp: ID port map(
                ExtImm => ExtImm, 
                Func => Func,
                Sa => Sa,
-               DecodedWriteAddress => DecodedWriteAddress
+               DecodedWriteAddress => DecodedWriteAddress,
+               ReadAddressRS => ReadAddressRS,
+               ReadADdressRT => ReadAddressRT
             );
             
 CU_Comp: CU port map(
@@ -212,15 +243,26 @@ CU_Comp: CU port map(
                RegWrite => RegWrite
             );   
             
-ID_EX_Reg: process(mono_btns(0))
+ID_EX_Reg: process(internal_clk)
 begin
-    if mono_btns(0)'event and mono_btns(0) = '1' then
+    if internal_clk'event and internal_clk = '1' then
+        if Branch='1' or RAW_Hazard_Detected='1' then 
+            -- Flush --> NOP
+            ID_EX_RegWrite <= '0';
+            ID_EX_MemWrite <= '0';
+            ID_EX_BranchEqual <= '0';
+            ID_EX_BranchGreater <= '0';
+            ID_EX_BranchGreaterEqual <= '0';
+            ID_EX_RegFileWriteAddress <= "000";
+        else
+            ID_EX_RegWrite <= RegWrite;
+            ID_EX_MemWrite <= MemWrite;
+            ID_EX_BranchEqual <= BranchEqual;
+            ID_EX_BranchGreater <= BranchGreater;
+            ID_EX_BranchGreaterEqual <= BranchGreaterEqual;
+            ID_EX_RegFileWriteAddress <= DecodedWriteAddress;
+        end if;
         ID_EX_MemToReg <= MemToReg;
-        ID_EX_RegWrite <= RegWrite;
-        ID_EX_MemWrite <= MemWrite;
-        ID_EX_BranchEqual <= BranchEqual;
-        ID_EX_BranchGreater <= BranchGreater;
-        ID_EX_BranchGreaterEqual <= BranchGreaterEqual;
         ID_Ex_AluSrc <= AluSrc;
         ID_EX_AluOp <= AluOp;
         ID_EX_ReadData1 <= ReadData1;
@@ -229,7 +271,6 @@ begin
         ID_EX_ExtImm <= ExtImm;
         ID_EX_Func <= Func;
         ID_EX_Sa <= Sa;
-        ID_EX_RegFileWriteAddress <= DecodedWriteAddress;
     end if;
 end process;   
             
@@ -246,16 +287,21 @@ EX_Comp: EX port map(
                Zero => Zero,
                ALURes => AluRes);
 
-IX_MU_Reg: process(mono_btns(0))
+EX_MU_Reg: process(internal_clk)
 begin
-    if mono_btns(0)'event and mono_btns(0) = '1' then
+    if internal_clk'event and internal_clk = '1' then
+        if Branch='1' then
+            EX_MU_RegWrite <= '0';
+            EX_MU_MemWrite <= '0';
+        else
+            EX_MU_RegWrite <= ID_EX_RegWrite;
+            EX_MU_MemWrite <= ID_EX_MemWrite;
+        end if;
         EX_MU_AluRes <= AluRes;
         EX_MU_ReadData2 <= ID_EX_ReadData2;
         EX_MU_Zero <= Zero;
         EX_MU_BranchAddress <= BranchAddress;
         EX_MU_MemToReg <= ID_EX_MemToReg;
-        EX_MU_RegWrite <= ID_EX_RegWrite;
-        EX_MU_MemWrite <= ID_EX_MemWrite;
         EX_MU_BranchEqual <= ID_EX_BranchEqual;
         EX_MU_BranchGreater <= ID_EX_BranchGreater;
         EX_MU_BranchGreaterEqual <= ID_EX_BranchGreaterEqual;
@@ -264,15 +310,15 @@ begin
 end process;              
              
 MU_Comp: MU port map( 
-            clk => mono_btns(0),
+            clk => internal_clk,
            Address => EX_MU_AluRes,
            WriteData => EX_MU_ReadData2,
            MemWrite => EX_MU_MemWrite,
            MemData => MemData);
            
-MU_WB_Reg: process(mono_btns(0))
+MU_WB_Reg: process(internal_clk)
 begin
-    if mono_btns(0)'event and mono_btns(0) = '1' then
+    if internal_clk'event and internal_clk = '1' then
         MU_WB_RegWrite <= EX_MU_RegWrite;
         MU_WB_RegFileWriteAddress <= EX_MU_RegFileWriteAddress;
         MU_WB_MemData <= MemData;
@@ -280,6 +326,18 @@ begin
         MU_WB_MemToReg <= EX_MU_MemToReg;
     end if;
 end process;    
+
+HazardDetector: hazard_detector port map(
+           IF_ID_opcode => IF_ID_instr(15 downto 13),
+           IF_ID_rs => ReadAddressRS,
+           IF_ID_rt => ReadAddressRT,
+           IF_ID_RegDst => DecodedWriteAddress,
+           IF_ID_imm => ExtImm,
+           ID_EX_RegWrite => ID_EX_RegWrite,
+           ID_EX_RegDst => ID_EX_RegFileWriteAddress,
+           EX_MEM_RegWrite => EX_MU_RegWrite,
+           EX_MEM_RegDst => EX_MU_RegFileWriteAddress,
+           hazard_detected => RAW_hazard_detected);
               
 MonoPulseGenerator: generic_mpg
         generic map(N => 5)
@@ -292,11 +350,13 @@ MonoPulseGenerator: generic_mpg
  JumpAddress <= IF_ID_NextInstrAddress(15 downto 13) & IF_ID_Instr(12 downto 0);
  Branch_Ctrl: process(EX_MU_BranchEqual, EX_MU_BranchGreaterEqual, EX_MU_BranchGreater, EX_MU_Zero, EX_MU_AluRes) 
  begin
-    PCSrc <= '0';
+    Branch <= '0';
     if (EX_MU_BranchEqual = '1' or EX_MU_BranchGreaterEqual = '1') and EX_MU_Zero = '1' then
-        PCSrc <= '1';
-    elsif (EX_MU_BranchGreater = '1' or EX_MU_BranchGreaterEqual = '1') and EX_MU_AluRes(15) = '0' then
-        PCSrc <= '1';
+        Branch <= '1';
+    elsif EX_MU_BranchGreaterEqual = '1' and EX_MU_AluRes(15) = '0' then
+        Branch <= '1';
+    elsif EX_MU_BranchGreater = '1' and EX_MU_AluRes(15) = '0' and EX_MU_Zero /= '1' then
+        Branch <= '1';
     end if;
  end process;    
  
@@ -323,7 +383,7 @@ MonoPulseGenerator: generic_mpg
  end process;
  
  led(0) <= Jump;
- led(1) <= PCSrc;
+ led(1) <= Branch;
  led(2) <= RegDst;
  led(3) <= ExtOp;
  led(4) <= ALUSrc;
@@ -331,7 +391,7 @@ MonoPulseGenerator: generic_mpg
  led(6) <= BranchGreaterEqual;
  led(7) <= BranchGreater;
  led(8) <= MemWrite;
- led(9) <= MemToReg;
+ led(9) <= RAW_hazard_detected;
  led(12 downto 10) <= AluOp;
  led(15 downto 13) <= Func;
  

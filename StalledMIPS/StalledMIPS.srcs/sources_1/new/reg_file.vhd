@@ -49,10 +49,10 @@ architecture Behavioral of registerfile is
 type reg_array is array(0 to 7) of std_logic_vector(15 downto 0);
 signal reg_file: reg_array := (
         x"0000",
+        x"0001",
         x"0000",
         x"0000",
-        x"0000",
-        x"1234",
+        x"1235",
         others => x"0000"
 );
 
@@ -61,7 +61,9 @@ begin
     begin
         if falling_edge(clk) then
             if RegWr='1' then
-                reg_file(conv_integer(WA)) <= WD;
+                if conv_integer(WA) /= 0 then
+                    reg_file(conv_integer(WA)) <= WD;
+                end if;
             end if;
         end if;
     end process;

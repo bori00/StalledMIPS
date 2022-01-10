@@ -54,21 +54,33 @@ entity ram is
 end ram;
 
 architecture Behavioral of ram is
-    type ram_type is array(0 to 32768) of std_logic_vector(15 downto 0); --64k * 16bit memory
+    type ram_type is array(0 to 32767) of std_logic_vector(15 downto 0); --64k * 16bit memory
     signal ram_data: ram_type := (
-        x"0005",
+--        --for tester code 1
+--        x"0005",
+--        others => x"0000"
+
+     --for tester code 2
+        x"0006",
+        x"0002",
+        x"000A",
+        x"000C",
+        x"0000",
+        x"00AA",
+        x"0007",
         others => x"0000"
     );
 begin
+
+    do <= ram_data(conv_integer(addr(14 downto 0)));
 
     process(clk) 
     begin
         if clk'event and clk='1' then
             if we='1' then
-                ram_data(conv_integer(addr)/2) <= di; --todo
+                ram_data(conv_integer(addr(14 downto 0))) <= di;
             end if;
         end if;
     end process;
     
-    do <= ram_data(conv_integer(addr)/2); --todo
 end Behavioral;
